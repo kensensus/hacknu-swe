@@ -10,6 +10,9 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.82.0",
+    "@liveblocks/client": "^3.17.0",
+    "@liveblocks/react": "^3.17.0",
+    "@tldraw/tldraw": "^4.5.7",
     "@y-sweet/client": "^0.9.1",
     "@y-sweet/sdk": "^0.9.1",
     "axios": "^1.14.0",
