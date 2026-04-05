@@ -4,6 +4,7 @@ import dynamic from 'next/dynamic';
 import 'tldraw/tldraw.css';
 import { useEffect, useRef, useState } from 'react';
 import { createShapeId, toRichText, AssetRecordType } from '@tldraw/tlschema';
+import { getUserPreferences, setUserPreferences } from '@tldraw/editor';
 import { LiveObject } from '@liveblocks/client';
 import {
   RoomProvider,
@@ -92,6 +93,7 @@ function CanvasApp() {
   const [sessionName, setSessionName] = useState('Guest');
   useEffect(() => { setSessionName(getSessionName()); }, []);
   const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
+  const [hgMode, setHgMode] = useState(false);
   const thinkingRef = useRef(false); // stable ref so timer closure sees current value
 
   // Chat is local state + ephemeral broadcast (no persistence)
@@ -165,6 +167,7 @@ function CanvasApp() {
 
   const handleMount = (editor: any) => {
     editorRef.current = editor;
+    setUserPreferences({ ...getUserPreferences(), colorScheme: hgMode ? 'dark' : 'light' });
     updatePresence({ userName: sessionName, cursor: null });
 
     // Broadcast diffs for real-time sync + periodically save full snapshot
@@ -226,6 +229,11 @@ function CanvasApp() {
 
   // Keep thinkingRef in sync
   useEffect(() => { thinkingRef.current = thinking; }, [thinking]);
+
+  // Sync Higgsfield theme with tldraw canvas dark mode
+  useEffect(() => {
+    setUserPreferences({ ...getUserPreferences(), colorScheme: hgMode ? 'dark' : 'light' });
+  }, [hgMode]);
 
   // Auto-scroll chat
   useEffect(() => {
@@ -438,47 +446,70 @@ function CanvasApp() {
     resetProactiveTimer(); // reset timer after every TAI response
   };
 
+  // Higgsfield brand colours
+  const HG = '#AAFF00';
+  const hg = hgMode;
+
+  // Theme helpers
+  const panel   = hg ? 'bg-black/95 border-zinc-700 text-zinc-100'        : 'bg-white/95 border-zinc-200 text-zinc-800';
+  const bubble  = (isTAI: boolean) => hg
+    ? (isTAI ? 'bg-zinc-800 border border-zinc-700 text-zinc-100' : 'bg-zinc-900 border border-zinc-800 text-zinc-200')
+    : (isTAI ? 'bg-orange-100 text-zinc-800'                      : 'bg-zinc-100 text-zinc-800');
+  const taiLabel = hg ? { color: HG } : { color: '#ea580c' };
+  const accent   = hg ? { background: HG, color: '#000' }          : { background: '#f97316', color: '#fff' };
+  const accentHover = hg ? 'hover:opacity-80' : 'hover:bg-orange-600';
+  const inputCls = hg
+    ? 'bg-zinc-900 border-zinc-700 text-zinc-100 placeholder-zinc-500 focus:border-[#AAFF00]'
+    : 'bg-white border-zinc-200 text-zinc-800 placeholder-zinc-400 focus:ring-2 focus:ring-orange-400';
+  const pendingBg = hg ? 'bg-zinc-900 border-zinc-600' : 'bg-orange-50 border-orange-200';
+  const systemMsg = hg ? 'text-zinc-500' : 'text-zinc-400';
+
   return (
     <div className="w-screen h-screen relative">
       <Tldraw onMount={handleMount} />
 
       {/* Online users */}
-      <div className="absolute top-6 right-6 flex items-center gap-2 z-50">
+      <div className="absolute top-5 right-5 flex items-center gap-2 z-50">
         {others.map((other) => (
-          <div key={other.connectionId} className="bg-white/90 backdrop-blur px-3 py-1 rounded-2xl shadow text-xs font-medium">
+          <div key={other.connectionId} className={`backdrop-blur border px-3 py-1 rounded-2xl shadow text-xs font-medium ${hg ? 'bg-zinc-900/90 border-zinc-700 text-zinc-300' : 'bg-white/90 border-zinc-200 text-zinc-700'}`}>
             {other.presence?.userName ?? 'Guest'}
           </div>
         ))}
-        <div className="bg-orange-500 text-white px-3 py-1 rounded-2xl shadow text-xs font-medium">
+        <div className="px-3 py-1 rounded-2xl shadow text-xs font-bold" style={accent}>
           {sessionName} (you)
         </div>
       </div>
 
       {/* Chat Panel */}
-      <div className="absolute bottom-8 left-8 w-96 bg-white/95 backdrop-blur-xl border shadow-2xl rounded-3xl p-4 max-h-[480px] flex flex-col z-50">
+      <div className={`absolute bottom-6 left-6 w-96 backdrop-blur-xl border shadow-2xl rounded-3xl p-4 max-h-[500px] flex flex-col z-50 ${panel}`}>
         <div className="font-semibold text-sm mb-3 flex items-center gap-2">
           <span className="text-xl">💬</span>
           Team Chat + TAI
+          {/* Higgsfield theme toggle */}
+          <button
+            onClick={() => setHgMode(m => !m)}
+            title="Toggle Higgsfield theme"
+            className={`ml-auto px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-all ${hg ? 'border-[#AAFF00] text-[#AAFF00] bg-black' : 'border-zinc-300 text-zinc-500 bg-white hover:border-zinc-500'}`}
+          >
+            {hg ? '⚡ HG' : '⚡ HG'}
+          </button>
         </div>
 
         <div className="flex-1 overflow-y-auto space-y-3 mb-4 text-sm">
           {(messages as ChatMessage[]).map((msg) => (
             <div key={msg.id} className={`flex group ${msg.role === 'tai' || msg.role === 'spark' ? 'justify-start' : msg.role === 'tai-system' ? 'justify-center' : 'justify-end'}`}>
               {msg.role === 'tai-system' ? (
-                <span className="text-xs text-zinc-400 italic">{msg.text}</span>
+                <span className={`text-xs italic ${systemMsg}`}>{msg.text}</span>
               ) : (
                 <div className="flex flex-col gap-1 max-w-[80%]">
-                  <div className={`px-4 py-3 rounded-3xl ${msg.role === 'tai' || msg.role === 'spark' ? 'bg-orange-100' : 'bg-zinc-100'}`}>
-                    {(msg.role === 'tai' || msg.role === 'spark') && <div className="text-[10px] text-orange-600 mb-1">🧠 TAI</div>}
-                    {msg.role === 'user' && <div className="text-[10px] text-zinc-400 mb-1">{msg.userName}</div>}
+                  <div className={`px-4 py-3 rounded-3xl text-xs ${bubble(msg.role === 'tai' || msg.role === 'spark')}`}>
+                    {(msg.role === 'tai' || msg.role === 'spark') && <div className="text-[10px] font-semibold mb-1" style={taiLabel}>🧠 TAI</div>}
+                    {msg.role === 'user' && <div className={`text-[10px] mb-1 ${hg ? 'text-zinc-500' : 'text-zinc-400'}`}>{msg.userName}</div>}
                     {msg.text}
                   </div>
                   <button
-                    onClick={() => {
-                      setReplyingTo(msg);
-                      setInput('');
-                    }}
-                    className="text-[10px] text-zinc-400 hover:text-zinc-600 opacity-0 group-hover:opacity-100 transition-opacity self-start px-2"
+                    onClick={() => { setReplyingTo(msg); setInput(''); }}
+                    className={`text-[10px] opacity-0 group-hover:opacity-100 transition-opacity self-start px-2 ${hg ? 'text-zinc-600 hover:text-zinc-300' : 'text-zinc-400 hover:text-zinc-600'}`}
                   >
                     ↩ Reply
                   </button>
@@ -486,11 +517,15 @@ function CanvasApp() {
               )}
             </div>
           ))}
-          {thinking && <div className="text-orange-400 text-xs animate-pulse pl-2">TAI is thinking...</div>}
+          {thinking && (
+            <div className="text-xs animate-pulse pl-2" style={hg ? { color: HG } : { color: '#f97316' }}>
+              TAI is thinking...
+            </div>
+          )}
 
           {pendingAction && (
-            <div className="bg-orange-50 border border-orange-200 rounded-2xl px-4 py-3 text-sm">
-              <div className="text-[10px] text-orange-600 mb-1">
+            <div className={`border rounded-2xl px-4 py-3 text-sm ${pendingBg}`}>
+              <div className="text-[10px] font-semibold mb-1" style={taiLabel}>
                 🧠 TAI wants to {pendingAction.type === 'delete' ? 'delete from' : pendingAction.type === 'rewrite' ? 'edit on' : 'add to'} canvas:
               </div>
               <div className="font-medium mb-3 whitespace-pre-wrap text-xs">
@@ -498,16 +533,20 @@ function CanvasApp() {
                 {pendingAction.type === 'rewrite' && (
                   <div className="space-y-1">
                     <div className="line-through text-red-400">{pendingAction.oldText}</div>
-                    <div className="text-green-600">{pendingAction.newText}</div>
+                    <div className={hg ? 'text-[#AAFF00]' : 'text-green-600'}>{pendingAction.newText}</div>
                   </div>
                 )}
                 {(pendingAction.type === 'sticky' || pendingAction.type === 'text') && `"${pendingAction.text}"`}
               </div>
               <div className="flex gap-2">
-                <button onClick={applyPending} className={`flex-1 ${pendingAction.type === 'delete' ? 'bg-red-500 hover:bg-red-600' : 'bg-orange-500 hover:bg-orange-600'} text-white rounded-2xl py-1.5 text-xs font-medium`}>
+                <button
+                  onClick={applyPending}
+                  className={`flex-1 rounded-2xl py-1.5 text-xs font-medium ${accentHover} ${pendingAction.type === 'delete' ? 'bg-red-500 text-white' : ''}`}
+                  style={pendingAction.type !== 'delete' ? accent : undefined}
+                >
                   {pendingAction.type === 'delete' ? 'Delete' : 'Apply'}
                 </button>
-                <button onClick={rejectPending} className="flex-1 bg-zinc-100 hover:bg-zinc-200 text-zinc-600 rounded-2xl py-1.5 text-xs font-medium">
+                <button onClick={rejectPending} className={`flex-1 rounded-2xl py-1.5 text-xs font-medium ${hg ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-400' : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-600'}`}>
                   Discard
                 </button>
               </div>
@@ -517,9 +556,9 @@ function CanvasApp() {
         </div>
 
         {replyingTo && (
-          <div className="flex items-center gap-2 mb-2 px-3 py-1.5 bg-zinc-50 border rounded-2xl text-xs text-zinc-500">
+          <div className={`flex items-center gap-2 mb-2 px-3 py-1.5 border rounded-2xl text-xs ${hg ? 'bg-zinc-900 border-zinc-700 text-zinc-400' : 'bg-zinc-50 border-zinc-200 text-zinc-500'}`}>
             <span className="flex-1 truncate">↩ Replying to: "{replyingTo.text.slice(0, 50)}{replyingTo.text.length > 50 ? '…' : ''}"</span>
-            <button onClick={() => setReplyingTo(null)} className="text-zinc-400 hover:text-zinc-600 font-bold">✕</button>
+            <button onClick={() => setReplyingTo(null)} className={`font-bold ${hg ? 'text-zinc-500 hover:text-zinc-300' : 'text-zinc-400 hover:text-zinc-600'}`}>✕</button>
           </div>
         )}
         <div className="flex gap-2">
@@ -528,20 +567,23 @@ function CanvasApp() {
             onChange={(e) => setInput(e.target.value)}
             onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
             placeholder="Chat here... use @TAI to mention"
-            className="flex-1 border rounded-3xl px-5 py-3 focus:outline-none focus:ring-2 focus:ring-orange-400 text-sm"
+            className={`flex-1 border rounded-3xl px-5 py-3 focus:outline-none text-sm transition-colors ${inputCls}`}
           />
-          <button onClick={sendMessage} className="bg-orange-500 hover:bg-orange-600 text-white px-6 rounded-3xl">
+          <button onClick={sendMessage} className={`px-6 rounded-3xl text-sm font-semibold ${accentHover}`} style={accent}>
             Send
           </button>
         </div>
       </div>
 
       {/* TAI status */}
-      <div className="absolute top-6 left-6 bg-white/90 backdrop-blur px-4 py-2 rounded-3xl shadow flex items-center gap-2 z-50">
-        <span className="text-2xl">🧠</span>
+      <div className={`absolute top-5 left-5 backdrop-blur px-4 py-2 rounded-3xl shadow flex items-center gap-2 z-50 ${hg ? 'bg-zinc-900/90 border border-zinc-700' : 'bg-white/90'}`}>
+        {hg
+          ? <div className="w-2 h-2 rounded-full animate-pulse" style={{ background: HG }} />
+          : <span className="text-2xl">🧠</span>
+        }
         <div className="text-sm">
-          TAI is watching
-          <div className="text-[10px] text-zinc-500">mention with @TAI</div>
+          <div className="font-semibold" style={hg ? { color: HG } : {}}>TAI is watching</div>
+          <div className={`text-[10px] ${hg ? 'text-zinc-500' : 'text-zinc-500'}`}>mention with @TAI</div>
         </div>
       </div>
     </div>
